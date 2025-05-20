@@ -1,0 +1,16 @@
+[project]
+name = "kyber-chain"
+version = "0.1.0"
+description = "FastAPI blockchain secured with ML-KEM-512 and CRYSTALS-Kyber512"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "pydantic",
+    "kyber-py",
+    "websockets",
+    "cryptography",
+    "requests"
+]
+
+[tool.uv]
