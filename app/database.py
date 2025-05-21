@@ -2,7 +2,7 @@ from typing import Optional
 import sqlite3
 import hashlib
 
-DATABASE = "users.db"
+DATABASE = "../users.db"
 
 
 def init_db():
