@@ -227,3 +227,6 @@ $RECYCLE.BIN/
 # Tests folder
 tests/
 tests/*
+
+# All json files
+*.json

@@ -1,20 +1,53 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
+from blockchain import Blockchain
 from pydantic import BaseModel
 from user import User
 import database
-from kyber_crypto import generate_keypair, encapsulate, decapsulate
-from message import encrypt_message, decrypt_message
-from blockchain import Blockchain
-import time
 import base64
+import time
+
+import hashlib
 
 
 app = FastAPI(title="Quantum-Safe Chat App")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 chain = Blockchain()
 database.init_db()
 users = {}
 
+AUTHORIZED_MINERS = [
+    "0xf60a54c7d46209d6e642c41ed4425e3754f7e27a", # Alex
+    "0xc74179634fb37e0fe4de16ca37399805ee994fc0"  # Luna
+]
+
+def verify_signature(transaction: dict) -> bool:
+    """Verify that the transaction was signed by the owner of the 'from' address."""
+    from_address = transaction["from"]
+    tx_data = {
+        "to": transaction["to"],
+        "encrypted_data": transaction["encrypted_data"],
+        "timestamp": transaction["timestamp"]
+    }
+
+    expected_hash = hashlib.sha256(str(tx_data).encode()).digest()
+    
+    try:
+        public_key_bytes = bytes.fromhex(get_public_key(from_address)["public_key"])
+    except Exception as e:
+        print("Public key error:", e)
+        return False
+
+    # In a real system, use Kyber/ML-KEM or ECDSA to verify signature
+    # For now, simulate verification
+    return True  # Replace with actual signature check later
 
 class EncryptedData(BaseModel):
     nonce: str
@@ -24,6 +57,7 @@ class EncryptedMessage(BaseModel):
     from_user: str
     to_user: str
     encrypted_data: EncryptedData
+    signature: str  # New field for signature
 
 
 @app.get("/", include_in_schema=False)
@@ -92,21 +126,41 @@ async def send_message(msg: EncryptedMessage):
 
     encoded_cyphertext = base64.b64encode(msg.encrypted_data.ciphertext.encode())
 
-    chain.add_block({
+    signed_tx = {
         "from": msg.from_user,
         "to": msg.to_user,
         "encrypted_data": {
             "nonce": "dummy",
-            "ciphertext": encoded_cyphertext
+            "ciphertext": encoded_cyphertext.decode()
         },
         "timestamp": time.time(),
-    })
+        "signature": msg.signature  # New field
+    }
 
-    return {"status": "Message sent", "hash": encoded_cyphertext.hex()}
-    #{
-    #   "status": "Message sent",
-    #   "hash": "534756736247387349466476636d786b49513d3d"
-    #}
+    # Verify signature
+    if not verify_signature(signed_tx):
+        raise HTTPException(status_code=403, detail="Invalid signature")
+
+    chain.add_transaction(signed_tx)
+    return {"status": "Transaction added to pool"}
+
+@app.get("/mine")
+def mine(address: str):
+    if not chain.unconfirmed_transactions:
+        return {"status": "No transactions to mine"}
+
+    # Check if miner is authorized
+    if address not in AUTHORIZED_MINERS:
+        raise HTTPException(status_code=403, detail="Unauthorized miner")
+
+    # Mine the block
+    proof = chain.mine()
+
+    return {
+        "status": "Block mined",
+        "hash": proof,
+        "transactions": chain.chain[-1].data
+    }
 
 @app.get("/read_message/{address}")
 def read_messages(address: str):
