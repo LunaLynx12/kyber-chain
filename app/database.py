@@ -2,7 +2,7 @@ from typing import Optional
 import sqlite3
 import hashlib
 
-DATABASE = "../users.db"
+DATABASE = "../database.db"
 
 
 def init_db():
@@ -15,6 +15,15 @@ def init_db():
             private_key BLOB NOT NULL
         )
     """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS miners (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_name TEXT NOT NULL,
+            FOREIGN KEY(user_name) REFERENCES users(name) ON DELETE CASCADE
+        )
+    """)
+    
     conn.commit()
     conn.close()
 
@@ -73,3 +82,27 @@ def get_user_by_address(address: str) -> Optional[dict]:
             }
 
     return None
+
+def add_miner(user_name: str):
+    conn = sqlite3.connect(DATABASE)
+    cursor = conn.cursor()
+    # Check if user exists
+    cursor.execute("SELECT COUNT(*) FROM users WHERE name = ?", (user_name,))
+    if cursor.fetchone()[0] == 0:
+        raise ValueError("User does not exist")
+    # Check if user is already a miner
+    cursor.execute("SELECT COUNT(*) FROM miners WHERE user_name = ?", (user_name,))
+    if cursor.fetchone()[0] > 0:
+        raise ValueError("User is already a miner")
+    cursor.execute("INSERT INTO miners (user_name) VALUES (?)", (user_name,))
+    conn.commit()
+    conn.close()
+
+def get_all_miners() -> list:
+    conn = sqlite3.connect(DATABASE)
+    cursor = conn.cursor()
+    cursor.execute("SELECT user_name FROM miners")
+    rows = cursor.fetchall()
+    conn.close()
+
+    return [row[0] for row in rows]

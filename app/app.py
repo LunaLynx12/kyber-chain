@@ -10,7 +10,6 @@ import time
 
 import hashlib
 
-
 app = FastAPI(title="Quantum-Safe Chat App")
 app.add_middleware(
     CORSMiddleware,
@@ -22,11 +21,6 @@ app.add_middleware(
 chain = Blockchain()
 database.init_db()
 users = {}
-
-AUTHORIZED_MINERS = [
-    "0xf60a54c7d46209d6e642c41ed4425e3754f7e27a", # Alex
-    "0xc74179634fb37e0fe4de16ca37399805ee994fc0"  # Luna
-]
 
 def verify_signature(transaction: dict) -> bool:
     """Verify that the transaction was signed by the owner of the 'from' address."""
@@ -57,7 +51,7 @@ class EncryptedMessage(BaseModel):
     from_user: str
     to_user: str
     encrypted_data: EncryptedData
-    signature: str  # New field for signature
+    signature: str
 
 
 @app.get("/", include_in_schema=False)
@@ -85,8 +79,16 @@ def get_users():
 def register_user(name: str):
     user = User(name)
     users[user.address] = user
-    return {"address": user.address}
+    return {"address": user.address, "public_key": user.keys.public_key.hex(), "private_key": user.keys.private_key.hex()}
 
+@app.post("/register_miner")
+def register_miner(name: str):
+    try:
+        database.add_miner(name)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    return {"status": f"User {name} is now a miner"}
 
 @app.get("/public_key/{address}")
 def get_public_key(address: str):
@@ -150,7 +152,7 @@ def mine(address: str):
         return {"status": "No transactions to mine"}
 
     # Check if miner is authorized
-    if address not in AUTHORIZED_MINERS:
+    if address not in database.get_all_miners():
         raise HTTPException(status_code=403, detail="Unauthorized miner")
 
     # Mine the block

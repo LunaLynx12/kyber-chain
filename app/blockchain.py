@@ -1,6 +1,7 @@
 import hashlib
 import time
 from typing import List, Dict
+from database import get_all_miners
 
 
 class Block:
@@ -21,10 +22,7 @@ class Blockchain:
     def __init__(self):
         self.chain: List[Block] = [self.create_genesis_block()]
         self.unconfirmed_transactions = []
-        self.authorized_miners = [
-            "0xf60a54c7d46209d6e642c41ed4425e3754f7e27a", # Alex
-            "0xc74179634fb37e0fe4de16ca37399805ee994fc0"  # Luna
-        ]
+        self.authorized_miners = get_all_miners()
 
     def create_genesis_block(self):
         return Block(0, {"data": "Genesis"}, "0")
