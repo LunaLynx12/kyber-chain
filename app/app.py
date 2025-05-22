@@ -1,15 +1,17 @@
-from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
+from routes import chain_route as chain_routes
+from routes import mine_route as mine_routes
+from routes import auth_route as auth_routes
+from fastapi import FastAPI, HTTPException
 from blockchain import Blockchain
 from pydantic import BaseModel
 from datetime import datetime
 from user import User
 import database
-import hashlib
 import base64
 
-
+users = {}
 app = FastAPI(title="Quantum-Safe Chat App")
 app.add_middleware(
     CORSMiddleware,
@@ -18,9 +20,16 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.include_router(chain_routes.router)
+app.include_router(mine_routes.router)
+app.include_router(auth_routes.router)
+
 chain = Blockchain()
+app.state.chain = chain
+app.state.users = users
+
 database.init_db()
-users = {}
+
 
 def verify_signature(transaction: dict) -> bool:
     """Verify that the transaction was signed by the owner of the 'from' address."""
@@ -31,24 +40,6 @@ def verify_signature(transaction: dict) -> bool:
         "timestamp": transaction["timestamp"]
     }
 
-    expected_hash = hashlib.sha256(str(tx_data).encode()).digest()
-    
-    #try:
-    #    public_key_bytes = get_public_key_bytes(from_address)
-        # In a real system, use Kyber/ML-KEM or ECDSA to verify signature
-        # For now, simulate verification
-    #    if not public_key_bytes:
-    #        raise ValueError("Public key not found")
-        
-        # Simulate signature verification
-    #    if transaction["signature"] != expected_hash.hex():
-    #        raise ValueError("Invalid signature")
-    #except Exception as e:
-    #    print("Public key error:", e)
-    #    return False
-
-    # In a real system, use Kyber/ML-KEM or ECDSA to verify signature
-    # For now, simulate verification
     return True  # Replace with actual signature check later
 
 class EncryptedData(BaseModel):
@@ -74,38 +65,6 @@ def get_public_key_bytes(address: str) -> bytes:
 @app.get("/", include_in_schema=False)
 def root():
     return RedirectResponse(url="/docs")
-
-
-@app.get("/users")
-def get_users():
-    db_users = database.get_all_users()
-    in_memory_users = [(user.name, user.address) for user in users.values()]
-    user_addresses = []
-    user_addresses.extend(in_memory_users)
-
-    for name in db_users:
-        if name not in [u[0] for u in user_addresses]:
-            user = User(name)
-            user_addresses.append((name, user.address))
-
-    result = [{"name": name, "address": address} for name, address in user_addresses]
-    return {"users": result}
-
-
-@app.post("/register")
-def register_user(name: str):
-    user = User(name)
-    users[user.address] = user
-    return {"address": user.address, "public_key": user.keys.public_key.hex(), "private_key": user.keys.private_key.hex()} #TODO: remove private key in production
-
-@app.post("/register_miner")
-def register_miner(name: str):
-    try:
-        database.add_miner(name)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-    return {"status": f"User {name} is now a miner"}
 
 
 @app.post("/send")
@@ -149,25 +108,6 @@ async def send_message(msg: EncryptedMessage):
     chain.add_transaction(signed_tx)
     return {"status": "Transaction added to pool"}
 
-@app.get("/mine")
-def mine(name: str):
-    if not chain.unconfirmed_transactions:
-        return {"status": "No transactions to mine"}
-
-    # Check if miner is authorized
-    if name not in database.get_all_miners():
-        print(database.get_all_miners())
-        raise HTTPException(status_code=403, detail="Unauthorized miner")
-
-    # Mine the block
-    proof = chain.mine()
-
-    return {
-        "status": "Block mined",
-        "index": len(chain.chain) -1,
-        "transactions": chain.chain[-1].data
-    }
-
 @app.get("/read_message/{address}")
 def read_messages(address: str):
     # Try to get user from in-memory first
@@ -181,9 +121,6 @@ def read_messages(address: str):
         else:
             raise HTTPException(status_code=404, detail="User not found")
 
-    # Get user's private key
-    private_key_bytes = user.keys.private_key
-
     # Get chain
     chain_data = chain.to_dict()
 
@@ -193,19 +130,11 @@ def read_messages(address: str):
         if block["data"].get("to") == address:
             encrypted_data = block["data"]["encrypted_data"]
             ciphertext = base64.b64decode(encrypted_data["ciphertext"])
-            #shared_secret = decapsulate(private_key_bytes, ciphertext)
-            #decrypted = decrypt_message(shared_secret, encrypted_data)
             received_messages.append(ciphertext)
 
     return {"address": address, "received_messages": received_messages}
 
 
-@app.get("/chain")
-def get_chain():
-    return chain.to_dict()
-
-
 if __name__ == "__main__":
     import uvicorn
-
     uvicorn.run(app, host="127.0.0.1", port=8000)
