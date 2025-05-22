@@ -3,12 +3,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 from blockchain import Blockchain
 from pydantic import BaseModel
+from datetime import datetime
 from user import User
 import database
-import base64
-import time
-
 import hashlib
+import base64
+
 
 app = FastAPI(title="Quantum-Safe Chat App")
 app.add_middleware(
@@ -33,11 +33,19 @@ def verify_signature(transaction: dict) -> bool:
 
     expected_hash = hashlib.sha256(str(tx_data).encode()).digest()
     
-    try:
-        public_key_bytes = bytes.fromhex(get_public_key(from_address)["public_key"])
-    except Exception as e:
-        print("Public key error:", e)
-        return False
+    #try:
+    #    public_key_bytes = get_public_key_bytes(from_address)
+        # In a real system, use Kyber/ML-KEM or ECDSA to verify signature
+        # For now, simulate verification
+    #    if not public_key_bytes:
+    #        raise ValueError("Public key not found")
+        
+        # Simulate signature verification
+    #    if transaction["signature"] != expected_hash.hex():
+    #        raise ValueError("Invalid signature")
+    #except Exception as e:
+    #    print("Public key error:", e)
+    #    return False
 
     # In a real system, use Kyber/ML-KEM or ECDSA to verify signature
     # For now, simulate verification
@@ -52,6 +60,15 @@ class EncryptedMessage(BaseModel):
     to_user: str
     encrypted_data: EncryptedData
     signature: str
+
+def get_public_key_bytes(address: str) -> bytes:
+    user = users.get(address)
+    if user:
+        return user.keys.public_key
+    db_user = database.get_user_by_address(address)
+    if db_user:
+        return db_user["public_key"]
+    raise HTTPException(status_code=404, detail="User not found")
 
 
 @app.get("/", include_in_schema=False)
@@ -79,7 +96,7 @@ def get_users():
 def register_user(name: str):
     user = User(name)
     users[user.address] = user
-    return {"address": user.address, "public_key": user.keys.public_key.hex(), "private_key": user.keys.private_key.hex()}
+    return {"address": user.address, "public_key": user.keys.public_key.hex(), "private_key": user.keys.private_key.hex()} #TODO: remove private key in production
 
 @app.post("/register_miner")
 def register_miner(name: str):
@@ -89,20 +106,6 @@ def register_miner(name: str):
         raise HTTPException(status_code=400, detail=str(e))
 
     return {"status": f"User {name} is now a miner"}
-
-@app.get("/public_key/{address}")
-def get_public_key(address: str):
-    # First check in-memory users
-    for user in users.values():
-        if user.address == address:
-            return {"public_key": user.keys.public_key.hex()}
-
-    # Then try to load from DB using helper function
-    db_user = database.get_user_by_address(address)
-    if db_user:
-        return {"public_key": db_user["public_key"].hex()}
-
-    raise HTTPException(status_code=404, detail="User not found")
 
 
 @app.post("/send")
@@ -135,7 +138,7 @@ async def send_message(msg: EncryptedMessage):
             "nonce": "dummy",
             "ciphertext": encoded_cyphertext.decode()
         },
-        "timestamp": time.time(),
+        "timestamp": datetime.utcnow().isoformat(),
         "signature": msg.signature  # New field
     }
 
@@ -147,12 +150,13 @@ async def send_message(msg: EncryptedMessage):
     return {"status": "Transaction added to pool"}
 
 @app.get("/mine")
-def mine(address: str):
+def mine(name: str):
     if not chain.unconfirmed_transactions:
         return {"status": "No transactions to mine"}
 
     # Check if miner is authorized
-    if address not in database.get_all_miners():
+    if name not in database.get_all_miners():
+        print(database.get_all_miners())
         raise HTTPException(status_code=403, detail="Unauthorized miner")
 
     # Mine the block
@@ -160,7 +164,7 @@ def mine(address: str):
 
     return {
         "status": "Block mined",
-        "hash": proof,
+        "index": len(chain.chain) -1,
         "transactions": chain.chain[-1].data
     }
 

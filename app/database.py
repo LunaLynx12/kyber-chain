@@ -83,6 +83,8 @@ def get_user_by_address(address: str) -> Optional[dict]:
 
     return None
 
+
+
 def add_miner(user_name: str):
     conn = sqlite3.connect(DATABASE)
     cursor = conn.cursor()
