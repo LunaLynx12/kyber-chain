@@ -1,6 +1,4 @@
 from fastapi import APIRouter, Request, HTTPException
-
-from fastapi import APIRouter, HTTPException
 from user import User
 import database
 

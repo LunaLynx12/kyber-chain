@@ -11,8 +11,8 @@ from user import User
 import database
 import base64
 
-users = {}
-app = FastAPI(title="Quantum-Safe Chat App")
+
+app = FastAPI(title="Quantum-Safe Blockchain API", version="1.0.0", license_info={"name": "GPL-3.0", "url": "https://www.gnu.org/licenses/gpl-3.0.en.html"})
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -26,9 +26,13 @@ app.include_router(auth_routes.router)
 
 chain = Blockchain()
 app.state.chain = chain
+users = {}
 app.state.users = users
 
-database.init_db()
+
+@app.get("/", include_in_schema=False)
+def root():
+    return RedirectResponse(url="/docs")
 
 
 def verify_signature(transaction: dict) -> bool:
@@ -45,7 +49,6 @@ def verify_signature(transaction: dict) -> bool:
 class EncryptedData(BaseModel):
     nonce: str
     ciphertext: str
-
 class EncryptedMessage(BaseModel):
     from_user: str
     to_user: str
@@ -60,12 +63,6 @@ def get_public_key_bytes(address: str) -> bytes:
     if db_user:
         return db_user["public_key"]
     raise HTTPException(status_code=404, detail="User not found")
-
-
-@app.get("/", include_in_schema=False)
-def root():
-    return RedirectResponse(url="/docs")
-
 
 @app.post("/send")
 async def send_message(msg: EncryptedMessage):
@@ -137,4 +134,6 @@ def read_messages(address: str):
 
 if __name__ == "__main__":
     import uvicorn
+
+    database.init_db()
     uvicorn.run(app, host="127.0.0.1", port=8000)
