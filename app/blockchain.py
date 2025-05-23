@@ -31,7 +31,7 @@ class Blockchain:
 
     def proof_of_work(self, block: Block) -> str:
         # Simulate mining with a fixed nonce for now
-        block.nonce = 123456
+        block.nonce = 123456 # TODO: Implement a real proof of work algorithm
         block.hash = block.compute_hash()
         return block.hash
 

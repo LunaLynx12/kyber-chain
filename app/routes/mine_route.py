@@ -20,6 +20,8 @@ def mine(
     if name not in get_all_miners():
         raise HTTPException(status_code=403, detail="Unauthorized miner")
 
+    proof = chain.mine()
+
     return {
         "status": "Block mined",
         "index": len(chain.chain) - 1,

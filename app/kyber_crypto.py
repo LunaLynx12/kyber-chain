@@ -30,3 +30,12 @@ def decapsulate(private_key: bytes, ciphertext: bytes) -> bytes:
     Decapsulate the shared secret using the private key and ciphertext.
     """
     return Kyber512.decaps(private_key, ciphertext)
+
+
+if __name__ == "__main__":
+    # Test the functions
+    keypair = generate_keypair()
+    shared_secret, ciphertext = encapsulate(keypair.public_key)
+    decapsulated_secret = decapsulate(keypair.private_key, ciphertext)
+    assert shared_secret == decapsulated_secret, "Decapsulation failed!"
+    print("Keypair generated successfully.")

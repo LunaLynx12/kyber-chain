@@ -1,5 +1,7 @@
 from fastapi.middleware.cors import CORSMiddleware
+from message import encrypt_message, decrypt_message
 from fastapi.responses import RedirectResponse
+from kyber_crypto import encapsulate, decapsulate, generate_keypair
 from routes import chain_route as chain_routes
 from routes import mine_route as mine_routes
 from routes import auth_route as auth_routes
@@ -66,11 +68,9 @@ def get_public_key_bytes(address: str) -> bytes:
 
 @app.post("/send")
 async def send_message(msg: EncryptedMessage):
-    # Try to get sender and recipient from in-memory dict
     sender = users.get(msg.from_user)
     recipient = users.get(msg.to_user)
 
-    # If not found, try loading from database
     if not sender:
         db_sender = database.get_user_by_address(msg.from_user)
         if db_sender:
@@ -85,17 +85,28 @@ async def send_message(msg: EncryptedMessage):
         else:
             raise HTTPException(status_code=400, detail="User not found")
 
-    encoded_cyphertext = base64.b64encode(msg.encrypted_data.ciphertext.encode())
+    # Load keys
+    sender_keys = database.get_user_keys(msg.from_user)
+    recipient_pub_key = database.get_user_by_address(msg.to_user)["public_key"]
+
+    # Kyber: Sender encapsulates using recipient's public key
+    shared_secret, ciphertext_kyber = encapsulate(recipient_pub_key)    
+
+    encrypted_payload = encrypt_message(
+        shared_secret=shared_secret,
+        plaintext=msg.encrypted_data.ciphertext
+    )
 
     signed_tx = {
         "from": msg.from_user,
         "to": msg.to_user,
+        "kyber_ciphertext": base64.b64encode(ciphertext_kyber).decode(),
         "encrypted_data": {
-            "nonce": "dummy",
-            "ciphertext": encoded_cyphertext.decode()
+            "nonce": encrypted_payload["nonce"],
+            "ciphertext": encrypted_payload["ciphertext"]
         },
         "timestamp": datetime.utcnow().isoformat(),
-        "signature": msg.signature  # New field
+        "signature": msg.signature
     }
 
     # Verify signature
@@ -105,12 +116,10 @@ async def send_message(msg: EncryptedMessage):
     chain.add_transaction(signed_tx)
     return {"status": "Transaction added to pool"}
 
+
 @app.get("/read_message/{address}")
 def read_messages(address: str):
-    # Try to get user from in-memory first
     user = users.get(address)
-
-    # If not found, try loading from DB
     if not user:
         db_user = database.get_user_by_address(address)
         if db_user:
@@ -118,19 +127,57 @@ def read_messages(address: str):
         else:
             raise HTTPException(status_code=404, detail="User not found")
 
-    # Get chain
-    chain_data = chain.to_dict()
+    # Get user private key
+    user_keys = database.get_user_keys(user.name)
+    private_key = user_keys["private_key"]
 
-    # Filter messages sent to this address
+    chain_data = chain.to_dict()  # Should be list of blocks
+
     received_messages = []
     for block in chain_data:
-        if block["data"].get("to") == address:
-            encrypted_data = block["data"]["encrypted_data"]
-            ciphertext = base64.b64decode(encrypted_data["ciphertext"])
-            received_messages.append(ciphertext)
+        if not isinstance(block, dict) or "data" not in block:
+            continue
+
+        block_data = block["data"]
+
+        # Handle both single transaction (dict) and list of transactions
+        transactions = []
+        if isinstance(block_data, dict):
+            transactions = [block_data]  # Wrap in list for uniform handling
+        elif isinstance(block_data, list):
+            transactions = block_data
+
+        for tx in transactions:
+            if not isinstance(tx, dict):
+                continue
+
+            if tx.get("to") != address:
+                continue
+
+            encrypted_data = tx.get("encrypted_data", {})
+            ciphertext_b64 = encrypted_data.get("ciphertext")
+            nonce_b64 = encrypted_data.get("nonce")
+            kyber_ciphertext_b64 = tx.get("kyber_ciphertext")
+
+            if not ciphertext_b64 or not nonce_b64 or not kyber_ciphertext_b64:
+                continue
+
+            try:
+                kyber_ciphertext = base64.b64decode(kyber_ciphertext_b64)
+                print("Kyber ciphertext size:", len(kyber_ciphertext))      # Should be 768
+                print("Private key size:", len(private_key))                # Should be 1632
+                shared_secret = decapsulate(private_key, kyber_ciphertext)
+                print("Shared secret size:", len(shared_secret))            # Should be 32
+
+                decrypted = decrypt_message(shared_secret, {
+                    "nonce": nonce_b64,
+                    "ciphertext": ciphertext_b64
+                })
+                received_messages.append(decrypted)
+            except Exception as e:
+                received_messages.append(f"[Decryption failed: {str(e)}]")
 
     return {"address": address, "received_messages": received_messages}
-
 
 if __name__ == "__main__":
     import uvicorn
