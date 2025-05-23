@@ -3,17 +3,20 @@ import time
 
 BLOCKCHAIN_URL = "http://localhost:8000"
 MINER_NAME = "Alex"
-MINE_INTERVAL = 15  # seconds between mining attempts
+MINE_INTERVAL = 15          # seconds between mining attempts
+API_KEY = "dummy_api_key"   # Replace this with the actual API key
 
 session = requests.Session()
 
 def mine_block():
     print(f"⛏️  Starting miner: {MINER_NAME}")
     backoff = 5
+    headers = {"Authorization": API_KEY}  
+
     try:
         while True:
             try:
-                response = session.get(f"{BLOCKCHAIN_URL}/mine", params={"name": MINER_NAME}, timeout=10)
+                response = session.get(f"{BLOCKCHAIN_URL}/mine", params={"name": MINER_NAME}, headers=headers, timeout=10)
                 if response.status_code == 200:
                     print("✅", response.json().get("status"))
                     time.sleep(MINE_INTERVAL)

@@ -36,7 +36,7 @@ def get_users(request: Request):
 @router.post("/register_miner", tags=["Auth"], summary="Register a new miner")
 def register_miner(name: str):
     try:
-        database.add_miner(name)
+        database.add_miner(name, "dummy_api_key") # TODO: ⚠️ REMOVE IN PRODUCTION
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 

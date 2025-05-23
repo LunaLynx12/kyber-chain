@@ -19,7 +19,8 @@ def init_db():
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS miners (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_name TEXT NOT NULL,
+            user_name TEXT NOT NULL UNIQUE,
+            api_key TEXT NOT NULL,
             FOREIGN KEY(user_name) REFERENCES users(name) ON DELETE CASCADE
         )
     """)
@@ -84,19 +85,25 @@ def get_user_by_address(address: str) -> Optional[dict]:
     return None
 
 
+###### MINER FUNCTIONS ######
 
-def add_miner(user_name: str):
+def add_miner(user_name: str, api_key: str):
     conn = sqlite3.connect(DATABASE)
     cursor = conn.cursor()
+
     # Check if user exists
     cursor.execute("SELECT COUNT(*) FROM users WHERE name = ?", (user_name,))
     if cursor.fetchone()[0] == 0:
         raise ValueError("User does not exist")
+
     # Check if user is already a miner
     cursor.execute("SELECT COUNT(*) FROM miners WHERE user_name = ?", (user_name,))
     if cursor.fetchone()[0] > 0:
         raise ValueError("User is already a miner")
-    cursor.execute("INSERT INTO miners (user_name) VALUES (?)", (user_name,))
+
+    hashed_key = hashlib.sha256(api_key.encode()).hexdigest()
+
+    cursor.execute("INSERT INTO miners (user_name, api_key) VALUES (?, ?)", (user_name, hashed_key))
     conn.commit()
     conn.close()
 
@@ -108,3 +115,14 @@ def get_all_miners() -> list:
     conn.close()
 
     return [row[0] for row in rows]
+
+def get_miner_key(user_name: str) -> Optional[str]:
+    conn = sqlite3.connect(DATABASE)
+    cursor = conn.cursor()
+    cursor.execute("SELECT api_key FROM miners WHERE user_name = ?", (user_name,))
+    row = cursor.fetchone()
+    conn.close()
+
+    if row:
+        return row[0]
+    return None
